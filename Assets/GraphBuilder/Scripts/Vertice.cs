@@ -5,7 +5,10 @@ using System.Collections.Generic;
 public class Vertice : MonoBehaviour
 {
     public string nome;
+    public int prioridade;
+
     public List<Vertice> verticesConectados;
+
     private Renderer rendererVertice;
     private TextMeshPro rotulo;
 
@@ -16,10 +19,13 @@ public class Vertice : MonoBehaviour
 
     public void Inicializar(string nomeGerado)
     {
+        
         if (string.IsNullOrWhiteSpace(nome))
         {
             nome = nomeGerado;
         }
+
+        AtualizarRotulo();
     }
 
     public void DefinirCor(Color cor)
@@ -40,12 +46,13 @@ public class Vertice : MonoBehaviour
     {
         if (rotulo != null)
         {
-            rotulo.text = nome;
+            rotulo.text = $"{nome} (P: {prioridade})";
         }
     }
 
     private void OnValidate()
     {
+        
         if (!string.IsNullOrEmpty(nome))
         {
             AtualizarRotulo();

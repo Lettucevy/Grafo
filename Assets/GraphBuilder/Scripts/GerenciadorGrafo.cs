@@ -1,36 +1,83 @@
 using UnityEngine;
 using TMPro;
 using System.Collections.Generic;
-
+using System.Linq;
 
 public class GerenciadorGrafo : MonoBehaviour
 {
     public List<Vertice> vertices = new List<Vertice>();
     public LineRenderer prefabLinha;
-    public TextMeshProUGUI textoFilaOuPilha;
     public Material materialLinha;
+    public TextMeshProUGUI textoFilaPilha;
+
+    public Vertice pontoInicial;
+    public Vertice pontoFinal;
 
     private List<Aresta> arestas = new List<Aresta>();
     private Queue<Vertice> fila = new Queue<Vertice>();
     private Stack<Vertice> pilha = new Stack<Vertice>();
     private List<Vertice> visitados = new List<Vertice>();
-    private bool usarBFS = true;
-    private bool buscando = false;
+    private bool isBuscando = false;
+
+    private enum AlgoritmoBusca { BFS, BFS_Prioridade, DFS, A_Star }
+    private AlgoritmoBusca algoritmoAtual = AlgoritmoBusca.BFS;
 
     private void Start()
     {
         InicializarVertices();
-        ConectarArestasAPartirDeConexoes();
+        ConectarArestas();
         IniciarBusca();
+    }
+
+    private void Update()
+    {
+        if (Input.GetMouseButtonDown(0) && isBuscando)
+        {
+            switch (algoritmoAtual)
+            {
+                case AlgoritmoBusca.BFS: PassoBFS(); break;
+                case AlgoritmoBusca.BFS_Prioridade: PassoBFSPrioridade(); break;
+                case AlgoritmoBusca.DFS: PassoDFS(); break;
+                case AlgoritmoBusca.A_Star: PassoAStar(); break;
+            }
+        }
+
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            ResetarGrafo();
+            IniciarBusca();
+        }
+
+        if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            AlternarAlgoritmo();
+        }
+    }
+
+    private void AlternarAlgoritmo()
+    {
+        algoritmoAtual = (AlgoritmoBusca)(((int)algoritmoAtual + 1) % 4);
+        Debug.Log($"Algoritmo atual: {algoritmoAtual}");
+    }
+
+    private void InicializarVertices()
+    {
+        foreach (var vertice in vertices)
+        {
+            vertice.Inicializar($"Vértice {vertices.IndexOf(vertice) + 1}");
+            TextMeshPro rotulo = CriarRotulo(vertice.nome, vertice.transform, new Vector3(8f, 1.5f, 0));
+            vertice.DefinirRotulo(rotulo);
+        }
+        Debug.Log("Vértices inicializados.");
     }
 
     private TextMeshPro CriarRotulo(string texto, Transform pai, Vector3 deslocamento)
     {
-        GameObject objetoRotulo = new GameObject($"{texto}_Rotulo");
-        objetoRotulo.transform.SetParent(pai, false);
-        objetoRotulo.transform.localPosition = deslocamento;
+        GameObject objRotulo = new GameObject($"Rotulo_{texto}");
+        objRotulo.transform.SetParent(pai, false);
+        objRotulo.transform.localPosition = deslocamento;
 
-        TextMeshPro rotulo = objetoRotulo.AddComponent<TextMeshPro>();
+        TextMeshPro rotulo = objRotulo.AddComponent<TextMeshPro>();
         rotulo.text = texto;
         rotulo.fontSize = 20;
         rotulo.color = Color.white;
@@ -38,32 +85,26 @@ public class GerenciadorGrafo : MonoBehaviour
         return rotulo;
     }
 
-    private void InicializarVertices()
-    {
-        foreach (var vertice in vertices)
-        {
-            vertice.Inicializar($" {vertices.IndexOf(vertice) + 1}");
-            TextMeshPro rotulo = CriarRotulo(vertice.nome, vertice.transform, new Vector3(9f, 1.5f, 0f));
-            vertice.DefinirRotulo(rotulo);
-        }
-        Debug.Log("Vértices inicializados.");
-    }
-
-    private void ConectarArestasAPartirDeConexoes()
+    private void ConectarArestas()
     {
         foreach (var vertice in vertices)
         {
             if (vertice.verticesConectados == null || vertice.verticesConectados.Count == 0)
                 continue;
 
-            foreach (var verticeConectado in vertice.verticesConectados)
+            foreach (var conectado in vertice.verticesConectados)
             {
-                if (!ArestaExiste(vertice, verticeConectado))
+                if (!ArestaExiste(vertice, conectado))
                 {
-                    CriarAresta($"Aresta {vertice.nome}-{verticeConectado.nome}", vertice, verticeConectado);
+                    CriarAresta($"Aresta {vertice.nome}-{conectado.nome}", vertice, conectado);
                 }
             }
         }
+    }
+
+    private bool ArestaExiste(Vertice v1, Vertice v2)
+    {
+        return arestas.Exists(a => (a.vertice1 == v1 && a.vertice2 == v2) || (a.vertice1 == v2 && a.vertice2 == v1));
     }
 
     private void CriarAresta(string nome, Vertice v1, Vertice v2)
@@ -76,12 +117,6 @@ public class GerenciadorGrafo : MonoBehaviour
         arestas.Add(aresta);
     }
 
-    private bool ArestaExiste(Vertice v1, Vertice v2)
-    {
-        return arestas.Exists(a =>
-            (a.Vertice1 == v1 && a.Vertice2 == v2) || (a.Vertice1 == v2 && a.Vertice2 == v1));
-    }
-
     private void IniciarBusca()
     {
         fila.Clear();
@@ -90,41 +125,27 @@ public class GerenciadorGrafo : MonoBehaviour
 
         if (vertices.Count > 0)
         {
-            Vertice verticeInicial = vertices[0];
-            if (usarBFS)
-                fila.Enqueue(verticeInicial);
-            else
-                pilha.Push(verticeInicial);
-
-            buscando = true;
-            Debug.Log("Busca iniciada.");
-        }
-    }
-
-    private void Update()
-    {
-        if (Input.GetMouseButtonDown(0) && buscando)
-        {
-            if (usarBFS)
+            if (algoritmoAtual == AlgoritmoBusca.A_Star)
             {
-                PassoBFS();
+                if (pontoInicial != null && pontoFinal != null)
+                {
+                    fila.Enqueue(pontoInicial);
+                    isBuscando = true;
+                }
             }
             else
             {
-                PassoDFS();
+                Vertice verticeInicial = vertices.FirstOrDefault(v => !visitados.Contains(v));
+                if (verticeInicial != null)
+                {
+                    if (algoritmoAtual == AlgoritmoBusca.BFS || algoritmoAtual == AlgoritmoBusca.BFS_Prioridade)
+                        fila.Enqueue(verticeInicial);
+                    else
+                        pilha.Push(verticeInicial);
+
+                    isBuscando = true;
+                }
             }
-        }
-
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            ReiniciarGrafo();
-            IniciarBusca();
-        }
-
-        if (Input.GetKeyDown(KeyCode.Tab))
-        {
-            usarBFS = !usarBFS;
-            Debug.Log($"Alternando para {(usarBFS ? "BFS" : "DFS")}");
         }
     }
 
@@ -133,31 +154,42 @@ public class GerenciadorGrafo : MonoBehaviour
         if (fila.Count > 0)
         {
             Vertice atual = fila.Dequeue();
-
-            if (!visitados.Contains(atual))
+            VisitarVertice(atual);
+            foreach (var vizinho in ObterVizinhos(atual))
             {
-                visitados.Add(atual);
-                atual.DefinirCor(Color.red);
-                Debug.Log($"Visitando: {atual.nome}");
-
-                foreach (var vizinho in ObterVizinhos(atual))
+                if (!visitados.Contains(vizinho) && !fila.Contains(vizinho))
                 {
-                    if (!visitados.Contains(vizinho) && !fila.Contains(vizinho))
-                    {
-                        fila.Enqueue(vizinho);
-                    }
+                    fila.Enqueue(vizinho);
                 }
-
-                AtualizarTextoUI();
             }
-            else
-            {
-                atual.DefinirCor(Color.gray);
-            }
+            AtualizarTexto();
         }
         else
         {
-            VerificarVerticesNaoVisitados();
+            VerificarProximoInicio();
+        }
+    }
+
+    private void PassoBFSPrioridade()
+    {
+        if (fila.Count > 0)
+        {
+            Vertice atual = fila.OrderByDescending(v => v.prioridade).First();
+            fila = new Queue<Vertice>(fila.Where(v => v != atual));
+            VisitarVertice(atual);
+
+            foreach (var vizinho in ObterVizinhos(atual))
+            {
+                if (!visitados.Contains(vizinho) && !fila.Contains(vizinho))
+                {
+                    fila.Enqueue(vizinho);
+                }
+            }
+            AtualizarTexto();
+        }
+        else
+        {
+            VerificarProximoInicio();
         }
     }
 
@@ -166,57 +198,80 @@ public class GerenciadorGrafo : MonoBehaviour
         if (pilha.Count > 0)
         {
             Vertice atual = pilha.Pop();
-
-            if (!visitados.Contains(atual))
+            VisitarVertice(atual);
+            foreach (var vizinho in ObterVizinhos(atual))
             {
-                visitados.Add(atual);
-                atual.DefinirCor(Color.red);
-                Debug.Log($"Visitando: {atual.nome}");
-
-                foreach (var vizinho in ObterVizinhos(atual))
+                if (!visitados.Contains(vizinho) && !pilha.Contains(vizinho))
                 {
-                    if (!visitados.Contains(vizinho) && !pilha.Contains(vizinho))
-                    {
-                        pilha.Push(vizinho);
-                    }
+                    pilha.Push(vizinho);
                 }
-
-                AtualizarTextoUI();
             }
-            else
-            {
-                atual.DefinirCor(Color.gray);
-            }
+            AtualizarTexto();
         }
         else
         {
-            VerificarVerticesNaoVisitados();
+            VerificarProximoInicio();
         }
     }
 
-    private void VerificarVerticesNaoVisitados()
+    private void PassoAStar()
     {
-        foreach (var vertice in vertices)
+        if (fila.Count > 0)
         {
-            if (!visitados.Contains(vertice))
-            {
-                Debug.Log($"Encontrado vértice não visitado: {vertice.nome}. Continuando busca...");
-                if (usarBFS)
-                    fila.Enqueue(vertice);
-                else
-                    pilha.Push(vertice);
+            Vertice atual = fila.OrderBy(v => Vector3.Distance(v.transform.position, pontoFinal.transform.position)).First();
+            fila = new Queue<Vertice>(fila.Where(v => v != atual));
+            VisitarVertice(atual);
 
+            if (atual == pontoFinal)
+            {
+                Debug.Log("Caminho encontrado!");
+                isBuscando = false;
                 return;
             }
-        }
 
-        FinalizarBusca();
+            foreach (var vizinho in ObterVizinhos(atual))
+            {
+                if (!visitados.Contains(vizinho) && !fila.Contains(vizinho))
+                {
+                    fila.Enqueue(vizinho);
+                }
+            }
+            AtualizarTexto();
+        }
+        else
+        {
+            Debug.Log("Nenhum caminho encontrado.");
+            isBuscando = false;
+        }
     }
 
-    private void FinalizarBusca()
+    private void VerificarProximoInicio()
     {
-        Debug.Log("Busca finalizada.");
-        buscando = false;
+        Vertice proximo = vertices.FirstOrDefault(v => !visitados.Contains(v));
+        if (proximo != null)
+        {
+            if (algoritmoAtual == AlgoritmoBusca.BFS || algoritmoAtual == AlgoritmoBusca.BFS_Prioridade)
+                fila.Enqueue(proximo);
+            else
+                pilha.Push(proximo);
+
+            Debug.Log($"Iniciando nova busca a partir de {proximo.nome}");
+        }
+        else
+        {
+            Debug.Log("Busca finalizada.");
+            isBuscando = false;
+        }
+    }
+
+    private void VisitarVertice(Vertice vertice)
+    {
+        if (!visitados.Contains(vertice))
+        {
+            visitados.Add(vertice);
+            vertice.DefinirCor(Color.red);
+            Debug.Log($"Visitando: {vertice.nome}");
+        }
     }
 
     private List<Vertice> ObterVizinhos(Vertice vertice)
@@ -224,52 +279,64 @@ public class GerenciadorGrafo : MonoBehaviour
         return vertice.verticesConectados ?? new List<Vertice>();
     }
 
-    private void AtualizarTextoUI()
+    private void AtualizarTexto()
     {
-        if (usarBFS)
+        if (algoritmoAtual == AlgoritmoBusca.BFS || algoritmoAtual == AlgoritmoBusca.BFS_Prioridade || algoritmoAtual == AlgoritmoBusca.A_Star)
         {
-            textoFilaOuPilha.text = $"Fila: {string.Join(", ", ObterNomesFormatados(fila))}";
+            textoFilaPilha.text = $"Fila: {string.Join(", ", fila.Select(v => v.nome))}";
         }
         else
         {
-            textoFilaOuPilha.text = $"Pilha: {string.Join(", ", ObterNomesFormatados(pilha))}";
+            textoFilaPilha.text = $"Pilha: {string.Join(", ", pilha.Select(v => v.nome))}";
         }
     }
 
-    private IEnumerable<string> ObterNomesFormatados(IEnumerable<Vertice> listaVertices)
+    private void ResetarGrafo()
     {
-        foreach (var vertice in listaVertices)
-        {
-            yield return $"Vértice {vertice.nome}";
-        }
-    }
+        fila.Clear();
+        pilha.Clear();
+        visitados.Clear();
 
-    private void ReiniciarGrafo()
-    {
         foreach (var vertice in vertices)
         {
             vertice.DefinirCor(Color.green);
         }
-        visitados.Clear();
-        fila.Clear();
-        pilha.Clear();
-        buscando = false;
-        Debug.Log("Grafo reiniciado.");
-    }
-}
 
-public class Aresta
-{
-    public string Nome;
-    public Vertice Vertice1;
-    public Vertice Vertice2;
-    public LineRenderer Linha;
-
-    public Aresta(string nome, Vertice v1, Vertice v2, LineRenderer linha)
-    {
-        Nome = nome;
-        Vertice1 = v1;
-        Vertice2 = v2;
-        Linha = linha;
+        Debug.Log("Grafo resetado.");
     }
+
+    public class Aresta {
+
+        public string nome;
+        public Vertice vertice1; 
+        public Vertice vertice2; 
+        public LineRenderer linha; 
+
+        public Aresta(string nome, Vertice v1, Vertice v2, LineRenderer linhaRenderer)
+        {
+            this.nome = nome;
+            vertice1 = v1;
+            vertice2 = v2;
+            linha = linhaRenderer;
+            AtualizarLinha();
+        }
+        public void AtualizarLinha()
+        {
+        if (linha != null && vertice1 != null && vertice2 != null)
+            {
+                linha.SetPosition(0, vertice1.transform.position);
+                linha.SetPosition(1, vertice2.transform.position);
+            }
+        }
+
+   
+        public void DefinirCor(Color cor)
+        {
+            if (linha != null)
+            {
+                linha.material.color = cor;
+            }
+        }
+    }
+
 }
